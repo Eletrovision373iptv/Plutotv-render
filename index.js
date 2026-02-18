@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 3003;
 
 let canaisCache = [];
 
+// Gerador de UUID v4 para simular um dispositivo real
 const gerarID = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -15,8 +16,8 @@ const gerarID = () => {
 
 async function atualizarListaDeCanais() {
     try {
-        console.log("🔄 Atualizando base de dados Pluto (PT-BR)...");
-        // Adicionamos parâmetros de Portugal/Brasil na busca da lista também
+        console.log("🔄 Atualizando base de dados Pluto BR...");
+        // Forçamos a API a entregar a lista brasileira
         const response = await fetch("https://api.pluto.tv/v2/channels?marketingRegion=BR&locale=pt-BR");
         const json = await response.json();
         
@@ -51,21 +52,21 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pluto Manager PT-BR</title>
+        <title>Pluto Manager BR-FIX</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
             body { background: #0a0a0a; color: #eee; font-family: sans-serif; }
-            .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; position: sticky; top:0; z-index:1000; }
-            .card { background: #161616; border: 1px solid #333; transition: 0.3s; height: 100%; }
-            .card:hover { border-color: #ffee00; transform: translateY(-5px); }
-            .logo-img { height: 60px; object-fit: contain; width: 100%; background: #000; padding: 8px; border-radius: 4px; }
-            .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; border:none; margin-bottom: 6px; }
+            .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; }
+            .card { background: #161616; border: 1px solid #333; height: 100%; transition: 0.3s; }
+            .card:hover { border-color: #ffee00; }
+            .logo-img { height: 60px; object-fit: contain; width: 100%; padding: 8px; }
+            .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; margin-bottom: 6px; border:none; }
             .btn-copy { background: #222; color: #fff; width: 100%; border: 1px solid #444; font-size: 11px; }
         </style>
     </head>
     <body>
     <div class="topo text-center">
-        <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL (FIX ÁUDIO)</h4>
+        <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL (ÁUDIO FIX)</h4>
         <a href="/lista.m3u" class="btn btn-warning btn-sm mt-2 fw-bold">📥 BAIXAR M3U</a>
     </div>
     <div class="container pb-5">
@@ -87,9 +88,7 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
-// ============================================================
-// REDIRECIONADOR COM BYPASS DE GEOLOCALIZAÇÃO
-// ============================================================
+// REDIRECIONADOR COM SIMULAÇÃO DE SMART TV (PARA FORÇAR PT-BR)
 app.get('/play/:id', (req, res) => {
     const canal = canaisCache.find(c => c.id === req.params.id);
     if (!canal) return res.status(404).send("Canal OFF");
@@ -97,30 +96,33 @@ app.get('/play/:id', (req, res) => {
     const sid = gerarID();
     const deviceId = gerarID();
 
+    // Parâmetros agressivos para forçar a região BR e o áudio PT
     const query = new URLSearchParams({
-        appName: "web",
-        appVersion: "5.33.0-60f786d5d4d3",
+        appName: "smarttv",           // Simula Smart TV em vez de Web
+        appVersion: "8.1.0",
         deviceDNT: "0",
         deviceId: deviceId,
-        deviceMake: "Chrome",
-        deviceModel: "web",
-        deviceType: "web",
-        deviceVersion: "120.0.0.0",
+        deviceMake: "samsung",        // Simula Samsung para priorizar áudio regional
+        deviceModel: "smarttv",
+        deviceType: "smarttv",
+        deviceVersion: "2023",
         sid: sid,
         userId: deviceId,
         includeExtendedEvents: "false",
-        serverSideAds: "true",
-        // FORÇANDO PARÂMETROS DE LOCALIZAÇÃO BRASILEIRA
-        marketingRegion: "BR",
-        locale: "pt-BR",
-        lang: "pt",
-        // COORDENADAS SIMULADAS (SÃO PAULO) - Isso ajuda muito no bypass de IP
+        marketingRegion: "BR",        // Essencial
+        locale: "pt-BR",              // Essencial
+        lang: "pt",                   // Essencial
+        m3u8st: "true",               // Força o stream a enviar as faixas de áudio corretas
         deviceLat: "-23.5505",
-        deviceLon: "-46.6333",
-        timezone: "America/Sao_Paulo"
+        deviceLon: "-46.6333"
     });
 
-    res.redirect(302, `${canal.urlBase}?${query.toString()}`);
+    const finalUrl = `${canal.urlBase}?${query.toString()}`;
+
+    console.log(`▶️ Forçando PT-BR para: ${canal.nome}`);
+    
+    // O 301 às vezes funciona melhor que o 302 para "esquecer" a localização do servidor
+    res.redirect(301, finalUrl);
 });
 
 // ROTA M3U
@@ -135,4 +137,4 @@ app.get('/lista.m3u', (req, res) => {
     res.send(m3u);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel PT-BR ativo na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel BR Ativo`));
