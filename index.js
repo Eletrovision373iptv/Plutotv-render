@@ -6,12 +6,12 @@ const PORT = process.env.PORT || 3003;
 
 let canaisCache = [];
 
-// Função para gerar um ID de sessão aleatório
+// Gera IDs aleatórios para simular dispositivos diferentes
 const gerarID = () => Math.random().toString(36).substring(2, 15);
 
 async function atualizarListaDeCanais() {
     try {
-        console.log("🔄 Buscando lista oficial Pluto TV...");
+        console.log("🔄 Buscando canais da API...");
         const response = await fetch("https://api.pluto.tv/v2/channels");
         const json = await response.json();
         
@@ -21,49 +21,83 @@ async function atualizarListaDeCanais() {
                 id: c._id,
                 nome: c.name,
                 logo: logo.replace(/^http:\/\//i, 'https://'),
-                // Guardamos apenas a URL base sem os parâmetros problemáticos
-                url: c.stitched?.urls?.[0]?.url ? c.stitched.urls[0].url.split('?')[0] : null,
+                // Limpa a URL original para evitar parâmetros duplicados
+                urlBase: c.stitched?.urls?.[0]?.url ? c.stitched.urls[0].url.split('?')[0] : null,
                 categoria: c.category || "Geral"
             };
-        }).filter(c => c.url);
+        }).filter(c => c.urlBase);
         
         console.log(`✅ ${canaisCache.length} canais carregados.`);
     } catch (e) {
-        console.error("❌ Erro ao carregar API:", e.message);
+        console.error("❌ Erro API:", e.message);
     }
 }
 
 atualizarListaDeCanais();
 
-// Painel Visual
+// --- PAINEL VISUAL ---
 app.get('/', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
+    const baseUrl = `${protocolo}://${host}`;
+
     res.send(`
-        <body style="background:#121212; color:white; font-family:sans-serif; text-align:center; padding:50px;">
-            <h1 style="color:#ffee00">PLUTO PROXY OK</h1>
-            <p>Lista M3U para seu Player:</p>
-            <input type="text" value="${protocolo}://${host}/lista.m3u" style="width:70%; padding:10px; border-radius:5px; border:none;" readonly>
-            <br><br>
-            <a href="/lista.m3u" style="color:#ffee00; text-decoration:none; font-weight:bold;">[ BAIXAR LISTA .M3U ]</a>
-            <p style="font-size:12px; margin-top:20px; color:#666;">Os canais são redirecionados com SID dinâmico para evitar erros.</p>
-        </body>
-    `);
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Pluto Manager Render</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body { background: #121212; color: #eee; font-family: sans-serif; }
+            .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; }
+            .card { background: #1e1e1e; border: 1px solid #333; height: 100%; }
+            .logo-img { height: 60px; object-fit: contain; width: 100%; background: #000; padding: 5px; }
+            .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; border:none; margin-bottom: 5px; }
+            .btn-copy { background: #333; color: #fff; width: 100%; border:none; font-size: 11px; }
+        </style>
+    </head>
+    <body>
+    <div class="topo text-center">
+        <h4>PLUTO <span style="color:#ffee00">RENDER</span></h4>
+        <a href="/lista.m3u" class="btn btn-warning btn-sm fw-bold">BAIXAR LISTA M3U</a>
+    </div>
+    <div class="container pb-5">
+        <div class="row g-2">
+        ${canaisCache.map(ch => `
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="card p-2 text-center">
+                    <img src="${ch.logo}" class="logo-img mb-2">
+                    <p class="text-truncate text-white fw-bold mb-2" style="font-size:12px;">${ch.nome}</p>
+                    <a href="${baseUrl}/play/${ch.id}" target="_blank" class="btn btn-sm btn-watch">ASSISTIR</a>
+                    <button onclick="copiar('${baseUrl}/play/${ch.id}')" class="btn btn-sm btn-copy">COPIAR</button>
+                </div>
+            </div>
+        `).join('')}
+        </div>
+    </div>
+    <script>
+        function copiar(txt) {
+            navigator.clipboard.writeText(txt).then(() => alert('Copiado!'));
+        }
+    </script>
+    </body></html>`);
 });
 
-// Rota de Redirecionamento com Limpeza de Parâmetros
+// --- REDIRECIONADOR (CORREÇÃO DE DNT E SID) ---
 app.get('/play/:id', (req, res) => {
     const canal = canaisCache.find(c => c.id === req.params.id);
-    if (!canal) return res.status(404).send("Canal não encontrado");
+    if (!canal) return res.status(404).send("Canal OFF");
 
     const sid = gerarID();
     
-    // Montamos os parâmetros do zero. 
-    // Como usamos o .split('?')[0] lá em cima, garantimos que não haverá duplicidade aqui.
-    const params = new URLSearchParams({
+    // Lista completa de parâmetros obrigatórios para evitar erros da Pluto
+    const query = new URLSearchParams({
         appName: "web",
         appVersion: "unknown",
         deviceId: sid,
+        deviceDNT: "0",        // <--- FIX: "Missing deviceDNT"
         deviceMake: "Chrome",
         deviceModel: "web",
         deviceType: "web",
@@ -72,15 +106,15 @@ app.get('/play/:id', (req, res) => {
         userId: sid,
         includeExtendedEvents: "false",
         marketingRegion: "BR"
-    }).toString();
+    });
 
-    const finalUrl = `${canal.url}?${params}`;
+    const finalUrl = `${canal.urlBase}?${query.toString()}`;
 
-    console.log(`▶️ Iniciando: ${canal.nome}`);
+    console.log(`▶️ Play: ${canal.nome}`);
     res.redirect(302, finalUrl);
 });
 
-// Rota M3U
+// --- ROTA M3U ---
 app.get('/lista.m3u', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
@@ -92,4 +126,4 @@ app.get('/lista.m3u', (req, res) => {
     res.send(m3u);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Online na porta ${PORT}`));
