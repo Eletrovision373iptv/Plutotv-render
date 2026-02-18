@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3003;
 
 let canaisCache = [];
 
-// Gerador de UUID v4 para simular um dispositivo real
+// Gerador de UUID Realista para evitar Blacklist e erros de SID vazio
 const gerarID = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -14,10 +14,11 @@ const gerarID = () => {
     });
 };
 
+// 1. ATUALIZADOR DE LISTA (FORÇA API BRASILEIRA)
 async function atualizarListaDeCanais() {
     try {
         console.log("🔄 Atualizando base de dados Pluto BR...");
-        // Forçamos a API a entregar a lista brasileira
+        // Pedimos a lista à API informando que o cliente é brasileiro
         const response = await fetch("https://api.pluto.tv/v2/channels?marketingRegion=BR&locale=pt-BR");
         const json = await response.json();
         
@@ -27,20 +28,22 @@ async function atualizarListaDeCanais() {
                 id: c._id,
                 nome: c.name,
                 logo: logo.replace(/^http:\/\//i, 'https://'),
+                // Limpa a URL de parâmetros antigos para evitar "Duplicated Params"
                 urlBase: c.stitched?.urls?.[0]?.url ? c.stitched.urls[0].url.split('?')[0] : null,
                 categoria: c.category || "Geral"
             };
         }).filter(c => c.urlBase);
         
-        console.log(`✅ ${canaisCache.length} canais carregados.`);
+        console.log(`✅ ${canaisCache.length} canais carregados com sucesso.`);
     } catch (e) {
-        console.error("Erro na API:", e.message);
+        console.error("❌ Erro ao carregar API Pluto:", e.message);
     }
 }
 
+// Inicializa a lista
 atualizarListaDeCanais();
 
-// PAINEL VISUAL
+// 2. PAINEL VISUAL (COPIAR E ASSISTIR)
 app.get('/', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
@@ -56,25 +59,27 @@ app.get('/', (req, res) => {
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
             body { background: #0a0a0a; color: #eee; font-family: sans-serif; }
-            .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; }
+            .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; position: sticky; top:0; z-index:1000; }
             .card { background: #161616; border: 1px solid #333; height: 100%; transition: 0.3s; }
-            .card:hover { border-color: #ffee00; }
-            .logo-img { height: 60px; object-fit: contain; width: 100%; padding: 8px; }
+            .card:hover { border-color: #ffee00; transform: translateY(-5px); }
+            .logo-img { height: 60px; object-fit: contain; width: 100%; background: #000; padding: 8px; border-radius: 4px; }
             .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; margin-bottom: 6px; border:none; }
             .btn-copy { background: #222; color: #fff; width: 100%; border: 1px solid #444; font-size: 11px; }
+            .badge-cat { font-size: 9px; color: #ffee00; text-transform: uppercase; display: block; margin-bottom: 5px; }
         </style>
     </head>
     <body>
-    <div class="topo text-center">
-        <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL (ÁUDIO FIX)</h4>
-        <a href="/lista.m3u" class="btn btn-warning btn-sm mt-2 fw-bold">📥 BAIXAR M3U</a>
+    <div class="topo d-flex justify-content-between align-items-center container-fluid">
+        <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL</h4>
+        <a href="/lista.m3u" class="btn btn-warning btn-sm fw-bold">📥 BAIXAR M3U</a>
     </div>
     <div class="container pb-5">
         <div class="row g-3">
         ${canaisCache.map(ch => `
             <div class="col-6 col-md-4 col-lg-2">
                 <div class="card p-3 text-center">
-                    <img src="${ch.logo}" class="logo-img mb-2">
+                    <img src="${ch.logo}" class="logo-img mb-2" loading="lazy">
+                    <small class="badge-cat">${ch.categoria}</small>
                     <p class="text-truncate text-white fw-bold mb-3" style="font-size:12px;">${ch.nome}</p>
                     <a href="${baseUrl}/play/${ch.id}" target="_blank" class="btn btn-sm btn-watch">ASSISTIR</a>
                     <button onclick="copiar('${baseUrl}/play/${ch.id}')" class="btn btn-sm btn-copy">COPIAR LINK</button>
@@ -83,49 +88,48 @@ app.get('/', (req, res) => {
         </div>
     </div>
     <script>
-        function copiar(t){ navigator.clipboard.writeText(t).then(()=>alert('Link copiado!')); }
+        function copiar(t){ navigator.clipboard.writeText(t).then(()=>alert('Link copiado para o seu Player!')); }
     </script>
     </body></html>`);
 });
 
-// REDIRECIONADOR COM SIMULAÇÃO DE SMART TV (PARA FORÇAR PT-BR)
+// 3. REDIRECIONADOR (CORREÇÃO DE BLACKLIST + ÁUDIO PT-BR)
 app.get('/play/:id', (req, res) => {
     const canal = canaisCache.find(c => c.id === req.params.id);
-    if (!canal) return res.status(404).send("Canal OFF");
+    if (!canal) return res.status(404).send("Canal não encontrado.");
 
     const sid = gerarID();
-    const deviceId = gerarID();
-
-    // Parâmetros agressivos para forçar a região BR e o áudio PT
+    
+    // Parâmetros para forçar o máximo possível o áudio em Português e evitar erros de header
     const query = new URLSearchParams({
-        appName: "smarttv",           // Simula Smart TV em vez de Web
-        appVersion: "8.1.0",
+        appName: "android",           // Simula dispositivo Android (mais flexível com áudio)
+        appVersion: "3.0.1",
         deviceDNT: "0",
-        deviceId: deviceId,
-        deviceMake: "samsung",        // Simula Samsung para priorizar áudio regional
-        deviceModel: "smarttv",
-        deviceType: "smarttv",
-        deviceVersion: "2023",
+        deviceId: sid,
+        deviceMake: "google",
+        deviceModel: "androidtv",
+        deviceType: "androidtv",
         sid: sid,
-        userId: deviceId,
+        userId: sid,
+        marketingRegion: "BR",        // Força Brasil
+        locale: "pt-BR",              // Força Português
+        lang: "pt",                   // Prioridade de áudio PT
+        deviceLat: "-23.5505",        // Coordenadas SP
+        deviceLon: "-46.6333",
         includeExtendedEvents: "false",
-        marketingRegion: "BR",        // Essencial
-        locale: "pt-BR",              // Essencial
-        lang: "pt",                   // Essencial
-        m3u8st: "true",               // Força o stream a enviar as faixas de áudio corretas
-        deviceLat: "-23.5505",
-        deviceLon: "-46.6333"
+        serverSideAds: "false"
     });
 
     const finalUrl = `${canal.urlBase}?${query.toString()}`;
 
-    console.log(`▶️ Forçando PT-BR para: ${canal.nome}`);
+    console.log(`▶️ Direcionando: ${canal.nome} (Simulando PT-BR)`);
     
-    // O 301 às vezes funciona melhor que o 302 para "esquecer" a localização do servidor
-    res.redirect(301, finalUrl);
+    // Header opcional para tentar enganar Geo-IP
+    res.setHeader('X-Forwarded-For', '189.120.0.1'); 
+    res.redirect(302, finalUrl);
 });
 
-// ROTA M3U
+// 4. ROTA DE LISTA M3U
 app.get('/lista.m3u', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
@@ -137,4 +141,7 @@ app.get('/lista.m3u', (req, res) => {
     res.send(m3u);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel BR Ativo`));
+// LIGA O SERVIDOR
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor pronto na porta ${PORT}`);
+});
