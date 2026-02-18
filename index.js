@@ -6,7 +6,6 @@ const PORT = process.env.PORT || 3003;
 
 let canaisCache = [];
 
-// UUID Realista para evitar Blacklist
 const gerarID = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -17,7 +16,8 @@ const gerarID = () => {
 async function atualizarListaDeCanais() {
     try {
         console.log("🔄 Atualizando base de dados Pluto (PT-BR)...");
-        const response = await fetch("https://api.pluto.tv/v2/channels");
+        // Adicionamos parâmetros de Portugal/Brasil na busca da lista também
+        const response = await fetch("https://api.pluto.tv/v2/channels?marketingRegion=BR&locale=pt-BR");
         const json = await response.json();
         
         canaisCache = json.map(c => {
@@ -31,7 +31,7 @@ async function atualizarListaDeCanais() {
             };
         }).filter(c => c.urlBase);
         
-        console.log(`✅ ${canaisCache.length} canais prontos.`);
+        console.log(`✅ ${canaisCache.length} canais carregados.`);
     } catch (e) {
         console.error("Erro na API:", e.message);
     }
@@ -45,13 +45,13 @@ app.get('/', (req, res) => {
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
     const baseUrl = `${protocolo}://${host}`;
 
-    let html = `
+    res.send(`
     <!DOCTYPE html>
     <html lang="pt-br">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pluto Manager BR</title>
+        <title>Pluto Manager PT-BR</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
             body { background: #0a0a0a; color: #eee; font-family: sans-serif; }
@@ -61,23 +61,19 @@ app.get('/', (req, res) => {
             .logo-img { height: 60px; object-fit: contain; width: 100%; background: #000; padding: 8px; border-radius: 4px; }
             .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; border:none; margin-bottom: 6px; }
             .btn-copy { background: #222; color: #fff; width: 100%; border: 1px solid #444; font-size: 11px; }
-            .badge-cat { font-size: 9px; color: #ffee00; text-transform: uppercase; margin-bottom: 5px; display: block; }
         </style>
     </head>
     <body>
-    <div class="topo">
-        <div class="container d-flex justify-content-between align-items-center">
-            <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL</h4>
-            <a href="/lista.m3u" class="btn btn-warning btn-sm fw-bold">📥 LISTA M3U</a>
-        </div>
+    <div class="topo text-center">
+        <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL (FIX ÁUDIO)</h4>
+        <a href="/lista.m3u" class="btn btn-warning btn-sm mt-2 fw-bold">📥 BAIXAR M3U</a>
     </div>
     <div class="container pb-5">
         <div class="row g-3">
         ${canaisCache.map(ch => `
             <div class="col-6 col-md-4 col-lg-2">
                 <div class="card p-3 text-center">
-                    <img src="${ch.logo}" class="logo-img mb-2" loading="lazy">
-                    <small class="badge-cat">${ch.categoria}</small>
+                    <img src="${ch.logo}" class="logo-img mb-2">
                     <p class="text-truncate text-white fw-bold mb-3" style="font-size:12px;">${ch.nome}</p>
                     <a href="${baseUrl}/play/${ch.id}" target="_blank" class="btn btn-sm btn-watch">ASSISTIR</a>
                     <button onclick="copiar('${baseUrl}/play/${ch.id}')" class="btn btn-sm btn-copy">COPIAR LINK</button>
@@ -88,12 +84,11 @@ app.get('/', (req, res) => {
     <script>
         function copiar(t){ navigator.clipboard.writeText(t).then(()=>alert('Link copiado!')); }
     </script>
-    </body></html>`;
-    res.send(html);
+    </body></html>`);
 });
 
 // ============================================================
-// REDIRECIONADOR COM FIX DE IDIOMA (PT-BR)
+// REDIRECIONADOR COM BYPASS DE GEOLOCALIZAÇÃO
 // ============================================================
 app.get('/play/:id', (req, res) => {
     const canal = canaisCache.find(c => c.id === req.params.id);
@@ -114,11 +109,15 @@ app.get('/play/:id', (req, res) => {
         sid: sid,
         userId: deviceId,
         includeExtendedEvents: "false",
-        serverSideAds: "false",
-        // --- PARÂMETROS DE IDIOMA E REGIÃO ---
-        marketingRegion: "BR", // Força Brasil
-        locale: "pt-BR",       // Força interface em Português
-        lang: "pt"             // Força áudio em Português quando disponível
+        serverSideAds: "true",
+        // FORÇANDO PARÂMETROS DE LOCALIZAÇÃO BRASILEIRA
+        marketingRegion: "BR",
+        locale: "pt-BR",
+        lang: "pt",
+        // COORDENADAS SIMULADAS (SÃO PAULO) - Isso ajuda muito no bypass de IP
+        deviceLat: "-23.5505",
+        deviceLon: "-46.6333",
+        timezone: "America/Sao_Paulo"
     });
 
     res.redirect(302, `${canal.urlBase}?${query.toString()}`);
@@ -136,4 +135,4 @@ app.get('/lista.m3u', (req, res) => {
     res.send(m3u);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel BR ativo na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel PT-BR ativo na porta ${PORT}`));
