@@ -16,7 +16,7 @@ const gerarID = () => {
 
 async function atualizarListaDeCanais() {
     try {
-        console.log("🔄 Atualizando base de dados Pluto...");
+        console.log("🔄 Atualizando base de dados Pluto (PT-BR)...");
         const response = await fetch("https://api.pluto.tv/v2/channels");
         const json = await response.json();
         
@@ -39,9 +39,7 @@ async function atualizarListaDeCanais() {
 
 atualizarListaDeCanais();
 
-// ============================================================
-// PAINEL VISUAL COMPLETO (VOLTOU!)
-// ============================================================
+// PAINEL VISUAL
 app.get('/', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
@@ -53,72 +51,49 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pluto Manager V4 - Render</title>
+        <title>Pluto Manager BR</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
-            body { background: #0a0a0a; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+            body { background: #0a0a0a; color: #eee; font-family: sans-serif; }
             .topo { background: #000; padding: 15px; border-bottom: 3px solid #ffee00; margin-bottom: 20px; position: sticky; top:0; z-index:1000; }
             .card { background: #161616; border: 1px solid #333; transition: 0.3s; height: 100%; }
-            .card:hover { border-color: #ffee00; transform: translateY(-5px); box-shadow: 0 5px 15px rgba(255, 238, 0, 0.1); }
+            .card:hover { border-color: #ffee00; transform: translateY(-5px); }
             .logo-img { height: 60px; object-fit: contain; width: 100%; background: #000; padding: 8px; border-radius: 4px; }
             .btn-watch { background: #ffee00; color: #000; font-weight: bold; width: 100%; border:none; margin-bottom: 6px; }
-            .btn-watch:hover { background: #ccbb00; }
             .btn-copy { background: #222; color: #fff; width: 100%; border: 1px solid #444; font-size: 11px; }
-            .btn-copy:hover { background: #333; }
-            .badge-cat { font-size: 9px; color: #ffee00; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; display: block; }
+            .badge-cat { font-size: 9px; color: #ffee00; text-transform: uppercase; margin-bottom: 5px; display: block; }
         </style>
     </head>
     <body>
     <div class="topo">
         <div class="container d-flex justify-content-between align-items-center">
-            <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> MANAGER</h4>
-            <div>
-                <a href="/lista.m3u" class="btn btn-warning btn-sm fw-bold">📥 BAIXAR M3U</a>
-            </div>
+            <h4 class="m-0"><span style="color:#ffee00">PLUTO</span> BRASIL</h4>
+            <a href="/lista.m3u" class="btn btn-warning btn-sm fw-bold">📥 LISTA M3U</a>
         </div>
     </div>
-    
     <div class="container pb-5">
         <div class="row g-3">
-        ${canaisCache.map(ch => {
-            const playLink = `${baseUrl}/play/${ch.id}`;
-            return `
+        ${canaisCache.map(ch => `
             <div class="col-6 col-md-4 col-lg-2">
                 <div class="card p-3 text-center">
                     <img src="${ch.logo}" class="logo-img mb-2" loading="lazy">
-                    <div class="card-body p-0">
-                        <small class="badge-cat">${ch.categoria}</small>
-                        <p class="text-truncate text-white fw-bold mb-3" style="font-size:13px;">${ch.nome}</p>
-                        <a href="${playLink}" target="_blank" class="btn btn-sm btn-watch">ASSISTIR</a>
-                        <button onclick="copiar('${playLink}')" class="btn btn-sm btn-copy">COPIAR LINK</button>
-                    </div>
+                    <small class="badge-cat">${ch.categoria}</small>
+                    <p class="text-truncate text-white fw-bold mb-3" style="font-size:12px;">${ch.nome}</p>
+                    <a href="${baseUrl}/play/${ch.id}" target="_blank" class="btn btn-sm btn-watch">ASSISTIR</a>
+                    <button onclick="copiar('${baseUrl}/play/${ch.id}')" class="btn btn-sm btn-copy">COPIAR LINK</button>
                 </div>
-            </div>`;
-        }).join('')}
+            </div>`).join('')}
         </div>
     </div>
-
     <script>
-        function copiar(texto) {
-            navigator.clipboard.writeText(texto).then(() => {
-                alert('Link copiado com sucesso!');
-            }).catch(() => {
-                const el = document.createElement('textarea');
-                el.value = texto;
-                document.body.appendChild(el);
-                el.select();
-                document.execCommand('copy');
-                document.body.removeChild(el);
-                alert('Link copiado!');
-            });
-        }
+        function copiar(t){ navigator.clipboard.writeText(t).then(()=>alert('Link copiado!')); }
     </script>
     </body></html>`;
     res.send(html);
 });
 
 // ============================================================
-// REDIRECIONADOR PROTEGIDO (ANTI-BLACKLIST)
+// REDIRECIONADOR COM FIX DE IDIOMA (PT-BR)
 // ============================================================
 app.get('/play/:id', (req, res) => {
     const canal = canaisCache.find(c => c.id === req.params.id);
@@ -140,15 +115,16 @@ app.get('/play/:id', (req, res) => {
         userId: deviceId,
         includeExtendedEvents: "false",
         serverSideAds: "false",
-        marketingRegion: "BR"
+        // --- PARÂMETROS DE IDIOMA E REGIÃO ---
+        marketingRegion: "BR", // Força Brasil
+        locale: "pt-BR",       // Força interface em Português
+        lang: "pt"             // Força áudio em Português quando disponível
     });
 
     res.redirect(302, `${canal.urlBase}?${query.toString()}`);
 });
 
-// ============================================================
 // ROTA M3U
-// ============================================================
 app.get('/lista.m3u', (req, res) => {
     const host = req.headers.host;
     const protocolo = req.headers['x-forwarded-proto'] || 'http';
@@ -160,4 +136,4 @@ app.get('/lista.m3u', (req, res) => {
     res.send(m3u);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel e Proxy ativos na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Painel BR ativo na porta ${PORT}`));
